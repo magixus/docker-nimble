@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+
+set -eo pipefail
+
+# If config file does not exist, try to register the instance
+if ! [ -f /etc/nimble/nimble.conf ]; then
+
+    # Need username and password to register
+    if ! [ -z "$WMSPANEL_USER" ]; then
+
+        cp -fr /etc/nimble.conf/* /etc/nimble
+        ARGS=""
+        if ! [ -z "$WMSPANEL_SLICES" ]; then
+            ARGS="--slices=$WMSPANEL_SLICES"
+        fi
+
+        # Try to register with apply-rules
+        # echo "start nimble with appy-rules ..."
+        # if ! /usr/bin/nimble_regutil $ARGS --apply-rules-conf \
+        #      -u "$WMSPANEL_USER" -p "$WMSPANEL_PASS"; then
+
+        #      echo "start nimble without appy-rules"
+        #     # Try without apply-rules
+            if ! /usr/bin/nimble_regutil \
+                 -u "$WMSPANEL_USER" -p "$WMSPANEL_PASS" --run-as-normal-user; then
+
+                # Not able to register; remove config again and exit
+                echo "Couldn't authentificate to the WMSpanel"
+                rm -f /etc/nimble/nimble.conf
+                exit
+            fi
+        # fi
+    fi
+fi
+
+if ! [ -f /etc/nimble/nimble.conf ]; then
+
+    ## Service is not registered yet
+    ##
+    cat <<EOF
+
+WARNING: Server is not registered yet!
+---------------------------------------
+
+Please run the container with the following
+environment variables.
+
+  - WMSPANEL_USER: WMSPanel registered username
+    (e.g. "my@email.com")
+  - WMSPANEL_PASS: WMSPanel user password
+  - WMSPANEL_SLICES: (optional) slice to register
+    the server to.
+
+You may want to mount the /etc/nimble folder from
+a persistent volume, so registration and config
+data is stored outside of the container.
+
+EOF
+
+    ## Sleep forever. Let the end user notice the error message
+    ## echoed to the logs.
+    ##
+    exec /sbin/setuser nimble sleep infinity
+fi
+
+# Make nimble user the owner of files in log directory
+chown -R nimble:root /var/log/nimble
+
+# Make nimble user the owner of rules.conf
+if [ -f /etc/nimble/rules.conf ]; then
+    chown -R nimble:root /etc/nimble/rules.conf
+    chmod 664 /etc/nimble/rules.conf
+fi
+
+# Recreate a directory for videos
+chown -R nimble:root /videos
+
+
+# Set the maximum number of open file descriptors
+ulimit -n 50000
+
+# Restart the service as the nimble user
+chown -R root:root /etc/nimble
+chown nimble:root /var/cache/nimble
+rm -f /etc/nimble/run_as_root
+
+service nimble restart
+
+
